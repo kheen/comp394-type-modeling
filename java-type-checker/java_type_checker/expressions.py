@@ -14,6 +14,7 @@ class Expression(object):
         Returns the compile-time type of this expression, i.e. the most specific type that describes
         all the possible values it could take on at runtime. Subclasses must implement this method.
         """
+
         raise NotImplementedError(type(self).__name__ + " must implement static_type()")
 
     def check_types(self):
@@ -31,6 +32,12 @@ class Variable(Expression):
         self.name = name                    #: The name of the variable
         self.declared_type = declared_type  #: The declared type of the variable (Type)
 
+    def static_type(self):
+        return self.declared_type
+
+    def check_types(self):
+        pass
+
 
 class Literal(Expression):
     """ A literal value entered in the code, e.g. `5` in the expression `x + 5`.
@@ -39,10 +46,21 @@ class Literal(Expression):
         self.value = value  #: The literal value, as a string
         self.type = type    #: The type of the literal (Type)
 
+    def static_type(self):
+        return self.type
+
+    def check_types(self):
+        pass
 
 class NullLiteral(Literal):
     def __init__(self):
         super().__init__("null", Type.null)
+
+    def static_type(self):
+        return Type.null
+
+    def check_types(self):
+        pass
 
 
 class MethodCall(Expression):
@@ -55,6 +73,37 @@ class MethodCall(Expression):
         self.method_name = method_name  #: The name of the method to call (String)
         self.args = args                #: The method arguments (list of Expressions)
 
+    def static_type(self):
+        return self.receiver.static_type().method_named(self.method_name).return_type
+
+
+    def check_types(self):
+
+        for arg in self.args:
+            arg.check_types()
+
+
+        correctTypes = self.receiver.static_type().method_named(self.method_name).argument_types
+        argTypes = []
+        for arg in self.args:
+            argTypes += [arg.static_type()]
+
+        if len(correctTypes) != len(argTypes):
+            raise JavaTypeError(
+                "Wrong number of arguments for {0}: expected {1}, got {2}".format(
+                    "{}.{}()".format(self.receiver.static_type().name, self.method_name),
+                    len(correctTypes),
+                    len(argTypes)))
+
+        for i in range(len(correctTypes)):
+            if not argTypes[i].is_subtype_of(correctTypes[i]):
+                raise JavaTypeError(
+                    "{0} expects arguments of type {1}, but got {2}".format(
+                        "{}.{}()".format(self.receiver.static_type().name, self.method_name),
+                        names(correctTypes),
+                        names(argTypes)))
+
+
 
 class ConstructorCall(Expression):
     """
@@ -63,6 +112,38 @@ class ConstructorCall(Expression):
     def __init__(self, instantiated_type, *args):
         self.instantiated_type = instantiated_type  #: The type to instantiate (Type)
         self.args = args                            #: Constructor arguments (list of Expressions)
+
+    def static_type(self):
+        return self.instantiated_type
+
+    def check_types(self):
+
+
+        for arg in self.args:
+            arg.check_types()
+
+        correctTypes = self.instantiated_type.constructor.argument_types
+        argTypes = []
+        for arg in self.args:
+            argTypes += [arg.static_type()]
+
+
+        if len(correctTypes) != len(argTypes):
+            raise JavaTypeError(
+                "Wrong number of arguments for {0}: expected {1}, got {2}".format(
+                    self.instantiated_type.name + " constructor",
+                    len(correctTypes),
+                    len(argTypes)))
+
+        for i in range(len(correctTypes)):
+            if not argTypes[i].is_subtype_of(correctTypes[i]):
+                raise JavaTypeError(
+                    "{0} expects arguments of type {1}, but got {2}".format(
+                        self.instantiated_type.name + " constructor",
+                        names(correctTypes),
+                        names(argTypes)))
+
+
 
 
 class JavaTypeError(Exception):
